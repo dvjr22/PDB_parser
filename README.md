@@ -1,4 +1,5 @@
 # pdb_parser
 
-## searches through a directory, parses pdb data and stores in a relational database
-## written in perl
+Recursively searches through directories, parses pdb data with the ATOM label and stores in a relational database.
+
+written in perl
