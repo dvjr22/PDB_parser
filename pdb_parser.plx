@@ -1,5 +1,8 @@
 #!/usr/bin/perl
-#pdb_parserV3.plx
+#dive_parse_v4.plx
+
+# Still a work in progress. Modifying to account for different chains and models
+
 use DBI;
 use DBD::mysql;
 use File::Find;
@@ -9,19 +12,19 @@ use warnings;
 use strict;
 use Switch;
 
-#--- Base directory path
-my $base_path = "/path";
+# Directory recursion path 
+my $base_path = "/home/valdeslab/PDB_files/_pdb/00";
+#my $base_path = "/home/valdeslab/PDB_files/_pdb";
 
+# Log files
+my $log_file = "/home/valdeslab/PDB_files/log.txt";
 
-#--- Path to store log files
-my $log_file = "/path/log.txt";
-
-#--- time variables;
+# time variables;
 my $start = localtime;		
 my $finish;
 my $completion;
 
-#--- variables
+# variables
 my $count = 0;
 my $file_count = 125770;
 
@@ -30,10 +33,9 @@ my $file_count = 125770;
 #db name
 my $database = "myproject";
 #invoke subroutine to make db connection
-my $connection = ConnectToMySql($database);
+my $connection = ConnectToDB($database);
 #set query for sql insert
-my $query = "insert into atom_site_seq (atom, id, atom_id, comp_id, asym_id, seq_id, x_coord, y_coord, z_coord, occupancy, b_iso, type_symbol)
-values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ";
+my $query = "insert into atom (protein, record, serial, name, resName, chainId, resSeq, x_coord, y_coord, z_coord, occupancy, tempFactor, element, model) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ";
 #prepare statement to be connected to db
 my $statement = $connection -> prepare($query);
 
@@ -53,11 +55,11 @@ Complete($completion, $count);
 close ERROR;
 close LOG;
 
-#############################################################################################
-#####################		Begin Sub Routines		#############################
-#############################################################################################
+#######################################################################################################################################################
+################################################		Begin Sub Routines		#######################################################
+#######################################################################################################################################################
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 ProcessFiles
 
@@ -70,42 +72,43 @@ Description	:
 sub ProcessFiles {
 
     	#my $path = shift;
-		my $path = $_[0];
-		my $errors = 0;
-		my @array;
-		my $now;
-		my $file_start;
-		my $file_finish;
-		my $current_file;
-		my $error_file = "/path/error_dir_logs";
-		my $error_path = "/path/error_dir";
+	my $path = $_[0];
+	my $errors = 0;
+	my @array;
+	my $now;
+	my $file_start;
+	my $file_finish;
+	my $current_file;
+	my $error_file = "/home/valdeslab/PDB_files/error_dir_logs";
+	my $error_path = "/home/valdeslab/PDB_files/error_dir";
 
-		#--- pdb variables 
-		my $header = "HEADER";
-		#atom info
-		my $atom = "ATOM";
-		my $remark = "REMARK";
-		my $compnd = "COMPND";
-		my $hetatm = "HETATM";
-	
-		
-		#variables to be inserted in db
-		my($protein_id, $id, $atom_id, $comp_id, $asym_id, $seq_id, $x_coord, $y_coord, $z_coord, $occupancy, $b_iso, $type_symbol) = "";
+	#--- pdb variables 
+	my $header = "HEADER";
 
-   		#open directory
+	# Coordinate section
+	my $model = "MODEL";
+	my $endmdl = "ENDMDL";
+	my $atom = "ATOM";
+	my $anisou = "ANISOU";
+	my $hetatm = "HETATM";
+
+	#variables to be inserted in db
+	my($protein_id, $record, $serial, $name, $resName, $chain_id, $resSeq, $x_coord, $y_coord, $z_coord, $occupancy, $tempFactor, $element, $model_number);
+
+   	#open directory
     	opendir(DIR, $path) || die "Unable to open $path: $!";
 
-		#read in files
-		#grep to eliminate '.', '..' files
+	#read in files
+	#grep to eliminate '.', '..' files
     	my @files = grep { !/^\.{1,2}$/ } readdir (DIR);
 
     	#close directory.
     	closedir (DIR);
 
-		#place file names into map to attach full path
+	#place file names into map to attach full path
     	@files = map { $path . '/' . $_ } @files;
 
-		#
+	#
     	for (@files) {
         	#if file is a directory
 		if (-d $_) {
@@ -115,7 +118,7 @@ sub ProcessFiles {
 		#process file
 		} else { 
 			$count++;
-		    #print number of pdb to be processed and path
+		 	#print number of pdb to be processed and path
 			print "$count \t $_\n";
 			$current_file = $_;
 			#open file
@@ -127,31 +130,66 @@ sub ProcessFiles {
 				#chomp each line. will remove \n from each string
 				chomp $_;
 				$_ = Trim($_);
-				#split the line by ' ' and place each split into the array
-				@array = split ' ', $_;
-				my $tag = substr $_, 0, 7;
+				# substr EXPR,OFFSET,LENGTH
+				$record = substr $_, 0, 6;
 				# remove white space
-				$tag = Trim($tag);
+				$record = Trim($record);
 
-
-				if($tag eq $header){
+				if($record eq $header){
+					
 					$protein_id = substr $_, -4, 4;
 					print "$protein_id processing:\t$file_start\n";
 					$error_file .= '/' .$protein_id.'.txt';
 				}
 
 				#location for other insertion statements
+				if ($record eq $atom) {
 
-				if ($array[0] eq $atom) {
-					$statement -> execute($protein_id, $array[1], $array[2], $array[3], $array[4], $array[5], 
-						$array[6], $array[7], $array[8], $array[9], $array[10], $array[11]);
-					if($statement -> err){				
-						open ERROR, ">> $error_file" || die "Can't write on file $error_file: $!\n";
-						ErrorHeader($protein_id) if $errors eq 0;
-						LogError($statement, \@array);
-						close ERROR;
-						$errors++;
-					}#close if statement
+
+					$serial = substr $_, 7, 4;
+					$name = substr $_, 13, 3;
+					$resName = substr $_, 18, 2;
+					$chain_id = substr $_, 21, 2;
+					$resSeq = substr $_, 23, 4;
+
+					$x_coord = substr $_, 31, 7;
+					$y_coord = substr $_, 39, 7;
+					$z_coord = substr $_, 47, 7;
+					$occupancy = substr $_, 55, 5;
+					$tempFactor = substr $_, 61, 5;
+					$element = substr $_, 77, 3;
+					$model_number = 1;
+					
+					print "\n";
+
+					print "The value of record: $record\n";
+					print "The value of protein: $protein_id\n";
+
+					print "The value of id: $serial\n";
+					print "The value of atom_id: $name\n";
+
+					print "The value of comp_id: $resName\n";
+					print "The value of asym_id: $chain_id\n";
+					print "The value of seq_id: $resSeq\n";
+
+					print "The value of x: $x_coord\n";
+					print "The value of y: $y_coord\n";
+					print "The value of z: $z_coord\n";
+
+					print "The value of occu: $occupancy\n";
+					print "The value of b_iso: $tempFactor\n";
+					print "The value of type: $element\n";
+					print "The value of model: $model_number\n";
+
+#					$statement -> execute($protein_id, $id, $atom_id, $comp_id, $asym_id, $seq_id, 
+#						$x_coord, $y_coord, $z_coord, $occupancy, $b_iso, $type_symbol);
+#					if($statement -> err){				
+#						open ERROR, ">> $error_file" || die "Can't write on file $error_file: $!\n";
+#						ErrorHeader($protein_id) if $errors eq 0;
+#						LogError($statement, \@array);
+#						close ERROR;
+#						$errors++;
+#					}#close if statement
 				}#close if statment
 			}#close while loop
 			copy($current_file, $error_path) if $errors > 0;
@@ -163,12 +201,12 @@ sub ProcessFiles {
 		$completion = $now - $start;
 		Duration($completion);
 		FilesProcessed($count);
-		$error_file = "/path/error_dir_logs";
+		$error_file = "/home/valdeslab/PDB_files/error_dir_logs";
 
     	}#close for loop
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 ConnectToMySql
 
@@ -178,7 +216,7 @@ Description	:	Connects to MySQL database
 
 =cut
 
-sub ConnectToMySql{
+sub ConnectToDB{
 
 	my ($db) = @_;
 
@@ -206,7 +244,7 @@ sub ConnectToMySql{
 	return $l_connection;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 ErrorHeader
 
@@ -223,7 +261,7 @@ sub ErrorHeader{
 	
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 LogError
 
@@ -245,7 +283,7 @@ sub LogError{
 	print ERROR "$error_line\n";
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 LogProtein
 
@@ -269,7 +307,7 @@ sub LogProtein{
 	
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Complete
 
@@ -287,7 +325,7 @@ sub Complete{
 	print LOG "Files processed:\t$count\n";
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Duration
 
@@ -303,7 +341,7 @@ sub Duration{
 			"\tHours:\t".Hours($time)."\tMins:\t".Minutes($time)."\tSec:\t".Seconds($time)."\n";
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 FilesProcessed
 
@@ -319,7 +357,7 @@ sub FilesProcessed{
 	
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Seconds
 
@@ -333,7 +371,7 @@ sub Seconds{
 	return $_[0]%60;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Minutes
 
@@ -347,7 +385,7 @@ sub Minutes{
 	return ($_[0]/60)%60;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Hours
 
@@ -361,7 +399,7 @@ sub Hours{
 	return ($_[0]/60/60)%24;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Days
 
@@ -375,7 +413,7 @@ sub Days{
 	return ($_[0]/60/60/24)%7;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Weeks
 
@@ -389,7 +427,7 @@ sub Weeks{
 	return ($_[0]/60/60/24/7)%52;
 }
 
-#////////////////////////////////////////////////////////////////////////////////////////////
+#/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 =head1 Trim
 
@@ -400,6 +438,8 @@ Description	:	returns string w/ white space removed
 =cut
 
 sub  Trim { 
-	my $s = shift; $s =~ s/^\s+|\s+$//g; return $s 
+	my $s = shift; 
+	$s =~ s/^\s+|\s+$//g; 
+	return $s;
 }
 
