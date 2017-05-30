@@ -1,8 +1,5 @@
 #!/usr/bin/perl
-#dive_parse_v4.plx
-
-# Still a work in progress. Modifying to account for different chains and models
-
+# dive_parse_v4.plx
 use DBI;
 use DBD::mysql;
 use File::Find;
@@ -13,8 +10,9 @@ use strict;
 use Switch;
 
 # Directory recursion path 
-my $base_path = "/home/valdeslab/PDB_files/_pdb/00";
-#my $base_path = "/home/valdeslab/PDB_files/_pdb";
+# my $base_path = "/home/valdeslab/PDB_files/_pdb/00";
+# my $base_path = "/home/valdeslab/PDB_files/TestPDB";
+my $base_path = "/home/valdeslab/PDB_files/_pdb";
 
 # Log files
 my $log_file = "/home/valdeslab/PDB_files/log.txt";
@@ -28,22 +26,27 @@ my $completion;
 my $count = 0;
 my $file_count = 125770;
 
-#db variables and setup
+# db variables and setup
 
-#db name
+# db name
 my $database = "myproject";
 #invoke subroutine to make db connection
 my $connection = ConnectToDB($database);
-#set query for sql insert
-my $query = "insert into atom (protein, record, serial, name, resName, chainId, resSeq, x_coord, y_coord, z_coord, occupancy, tempFactor, element, model) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ";
-#prepare statement to be connected to db
+
+# set query for sql insert
+# my $query = "insert into atom (protein, record, serial, name, resName, chainId, resSeq, x_coord, y_coord, z_coord, occupancy, tempFactor, element, model) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ";
+
+# query for testing
+my $query = "insert into atom_test (protein, record, serial, name, resName, chainId, resSeq, x_coord, y_coord, z_coord, occupancy, tempFactor, element, model) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ";
+
+# prepare statement to be connected to db
 my $statement = $connection -> prepare($query);
 
-#open file and append new info
+# open file and append new info
 open LOG, ">> $log_file" or die "Can't write on file $log_file: $!\n";
 print LOG "Started Processing directory $base_path at: $start\n";
 
-#process pdb files 
+# process pdb files 
 ProcessFiles ($base_path);
 
 $finish = localtime;
@@ -51,7 +54,7 @@ print LOG "Completed Processing directory $base_path at: $finish\n\n";
 $completion = $finish - $start;
 Complete($completion, $count);
 
-#close file
+# close file
 close ERROR;
 close LOG;
 
@@ -71,7 +74,7 @@ Description	:
 
 sub ProcessFiles {
 
-    	#my $path = shift;
+    	# my $path = shift;
 	my $path = $_[0];
 	my $errors = 0;
 	my @array;
@@ -92,20 +95,20 @@ sub ProcessFiles {
 	my $anisou = "ANISOU";
 	my $hetatm = "HETATM";
 
-	#variables to be inserted in db
+	# variables to be inserted in db
 	my($protein_id, $record, $serial, $name, $resName, $chain_id, $resSeq, $x_coord, $y_coord, $z_coord, $occupancy, $tempFactor, $element, $model_number);
 
-   	#open directory
+   	# open directory
     	opendir(DIR, $path) || die "Unable to open $path: $!";
 
-	#read in files
-	#grep to eliminate '.', '..' files
+	# read in files
+	# grep to eliminate '.', '..' files
     	my @files = grep { !/^\.{1,2}$/ } readdir (DIR);
 
-    	#close directory.
+    	# close directory.
     	closedir (DIR);
 
-	#place file names into map to attach full path
+	# place file names into map to attach full path
     	@files = map { $path . '/' . $_ } @files;
 
 	#
@@ -115,95 +118,82 @@ sub ProcessFiles {
 			#recursive call w/ new directory
 		    	ProcessFiles ($_);
 
-		#process file
+		# process file
 		} else { 
 			$count++;
-		 	#print number of pdb to be processed and path
+		 	# print number of pdb to be processed and path
 			print "$count \t $_\n";
 			$current_file = $_;
-			#open file
+			# open file
 			open IN, $_ || die "Can't read source file $_: $!\n";
 			$file_start = localtime;
 			$errors = 0;
+			$model_number = 1;
 			
 			while (<IN>) {
-				#chomp each line. will remove \n from each string
+				# chomp each line. will remove \n from each string
 				chomp $_;
 				$_ = Trim($_);
 				# substr EXPR,OFFSET,LENGTH
 				$record = substr $_, 0, 6;
 				# remove white space
 				$record = Trim($record);
-
-				if($record eq $header){
-					
+				
+				# check for the current protein
+				if ($record eq $header){
 					$protein_id = substr $_, -4, 4;
 					print "$protein_id processing:\t$file_start\n";
 					$error_file .= '/' .$protein_id.'.txt';
 				}
+				# check for the current model
+				if ($record eq $model) {		
+					$model_number = substr $_, 11, 3;
+					$model_number = Trim($model_number);
+				}
+				# parse atom data to be inserted into database
+				if ($record eq $atom || $record eq $hetatm) {
+					$serial = substr $_, 6, 5; 
+					$name = substr $_, 12, 4; 
+					$resName = substr $_, 17, 3; 
+					$chain_id = substr $_, 21, 1; 
+					$resSeq = substr $_, 22, 4; 
+					$x_coord = substr $_, 30, 8;  
+					$y_coord = substr $_, 38, 8; 
+					$z_coord = substr $_, 46, 8; 
+					$occupancy = substr $_, 55, 5; 
+					$tempFactor = substr $_, 60, 6; 
+					$element = substr $_, 76, 2; 
+				} # close if statment  $record eq $atom || $record eq $hetatm
 
-				#location for other insertion statements
-				if ($record eq $atom) {
+				# execute insertion
+				$statement -> execute($protein_id, $record, $serial, $name, $resName, $chain_id, $resSeq, $x_coord, $y_coord, $z_coord, $occupancy, $tempFactor, $element, $model_number);
+
+				# catch and record error statements
+				if ($statement -> err) {				
+					open ERROR, ">> $error_file" || die "Can't write on file $error_file: $!\n";
+					ErrorHeader($protein_id) if $errors eq 0;
+					LogError($statement, \@array);
+					close ERROR;
+					$errors++;
+				} # close if statement $statement -> err
 
 
-					$serial = substr $_, 7, 4;
-					$name = substr $_, 13, 3;
-					$resName = substr $_, 18, 2;
-					$chain_id = substr $_, 21, 2;
-					$resSeq = substr $_, 23, 4;
+			} # close while loop <IN>
 
-					$x_coord = substr $_, 31, 7;
-					$y_coord = substr $_, 39, 7;
-					$z_coord = substr $_, 47, 7;
-					$occupancy = substr $_, 55, 5;
-					$tempFactor = substr $_, 61, 5;
-					$element = substr $_, 77, 3;
-					$model_number = 1;
-					
-					print "\n";
-
-					print "The value of record: $record\n";
-					print "The value of protein: $protein_id\n";
-
-					print "The value of id: $serial\n";
-					print "The value of atom_id: $name\n";
-
-					print "The value of comp_id: $resName\n";
-					print "The value of asym_id: $chain_id\n";
-					print "The value of seq_id: $resSeq\n";
-
-					print "The value of x: $x_coord\n";
-					print "The value of y: $y_coord\n";
-					print "The value of z: $z_coord\n";
-
-					print "The value of occu: $occupancy\n";
-					print "The value of b_iso: $tempFactor\n";
-					print "The value of type: $element\n";
-					print "The value of model: $model_number\n";
-
-#					$statement -> execute($protein_id, $id, $atom_id, $comp_id, $asym_id, $seq_id, 
-#						$x_coord, $y_coord, $z_coord, $occupancy, $b_iso, $type_symbol);
-#					if($statement -> err){				
-#						open ERROR, ">> $error_file" || die "Can't write on file $error_file: $!\n";
-#						ErrorHeader($protein_id) if $errors eq 0;
-#						LogError($statement, \@array);
-#						close ERROR;
-#						$errors++;
-#					}#close if statement
-				}#close if statment
-			}#close while loop
-			copy($current_file, $error_path) if $errors > 0;
+			copy($current_file, $error_path) if $errors > 0;	# copy the file to the error directory if it records an error
 			close IN;
 			$file_finish = localtime;
-			LogProtein($protein_id, $file_start, $file_finish, $errors);
-        	}#close if statement
+			LogProtein($protein_id, $file_start, $file_finish, $errors);	# log the protein with time to process and error count
+
+        	} # close if statement -d $_
+
 		$now = localtime;
 		$completion = $now - $start;
-		Duration($completion);
-		FilesProcessed($count);
-		$error_file = "/home/valdeslab/PDB_files/error_dir_logs";
+		Duration($completion);		# print duration of parsing
+		FilesProcessed($count);		# print files processed
+		$error_file = "/home/valdeslab/PDB_files/error_dir_logs";	# reset error log
 
-    	}#close for loop
+    	} # close for loop @files
 }
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -255,6 +245,7 @@ Description	:	writes to error file
 =cut
 
 sub ErrorHeader{
+
 	my $id = $_[0];
 	print ERROR "-----------------------------------------------------------------------------\n";
 	print ERROR "Errors for protien: $id\n";
@@ -272,6 +263,7 @@ Description	:	writes to error file
 =cut
 
 sub LogError{
+
 	my $state = $_[0];
 	my @line = @{$_[1]};
 	my $error_line;
@@ -294,6 +286,7 @@ Description	:	writes to log file
 =cut
 
 sub LogProtein{
+
 	my $id = $_[0];
 	my $started = $_[1];
 	my $finished = $_[2];
@@ -318,6 +311,7 @@ Description	:	returns program run time duration
 =cut
 
 sub Complete{
+
 	my $time = $_[0];
 	my $count = $_[1];
 	print LOG "Time of completion:\nWeeks:\t".Weeks($time)."\tDays:\t".Days($time).
@@ -336,6 +330,7 @@ Description	:	returns program run time duration
 =cut
 
 sub Duration{
+
 	my $time = $_[0];
 	print "Duration:\nWeeks:\t".Weeks($time)."\tDays:\t".Days($time).
 			"\tHours:\t".Hours($time)."\tMins:\t".Minutes($time)."\tSec:\t".Seconds($time)."\n";
@@ -352,9 +347,9 @@ Description	:	prints number of files currently processed
 =cut
 
 sub FilesProcessed{
+
 	my $files = $_[0];
 	print "Files processed:\t$files\n";
-	
 }
 
 #//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -368,6 +363,7 @@ Description	:	returns number of seconds
 =cut
 
 sub Seconds{
+
 	return $_[0]%60;
 }
 
@@ -382,6 +378,7 @@ Description	:	returns number of minutes
 =cut
 
 sub Minutes{
+
 	return ($_[0]/60)%60;
 }
 
@@ -396,6 +393,7 @@ Description	:	returns number of hours
 =cut
 
 sub Hours{
+
 	return ($_[0]/60/60)%24;
 }
 
@@ -410,6 +408,7 @@ Description	:	returns number of days
 =cut
 
 sub Days{
+
 	return ($_[0]/60/60/24)%7;
 }
 
@@ -424,6 +423,7 @@ Description	:	returns number of weeks
 =cut
 
 sub Weeks{
+
 	return ($_[0]/60/60/24/7)%52;
 }
 
@@ -438,6 +438,7 @@ Description	:	returns string w/ white space removed
 =cut
 
 sub  Trim { 
+
 	my $s = shift; 
 	$s =~ s/^\s+|\s+$//g; 
 	return $s;
