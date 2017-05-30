@@ -1,6 +1,6 @@
 # PDB Parser
 
-Recursively searches through directories, parses pdb data with the ATOM label and stores in a relational database.
+Recursively searches through directories, parses pdb data and stores in a rdbms
 
-written in perl
-# CindysListSupplementals
+## Contributers
+Just me
