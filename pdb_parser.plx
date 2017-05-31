@@ -5,16 +5,8 @@ use DBD::mysql;
 use File::Find;
 use File::Copy;
 use Time::Piece;
-use warnings;#!/usr/bin/perl
-# dive_parse_v4.plx
-use DBI;
-use DBD::mysql;
-use File::Find;
-use File::Copy;
-use Time::Piece;
 use warnings;
 use strict;
-use Switch;
 
 # Directory recursion path 
 # my $base_path = "/home/valdeslab/PDB_files/_pdb/00";
