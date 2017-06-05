@@ -8,15 +8,15 @@ they will not unzip any files as they run through directories, as the files shou
 
 ## Files
 - db_table_creater.plx
- - Drops all tables from database and replaces them. 
-- dive_parse_4.plx
- - Recursively accesses file directories, to parse and store PDB data in the database
+  - Drops all tables from database and replaces them. 
+- pdb_parser.plx
+  - Recursively accesses file directories, to parse and store PDB data in the database
 - dssp_file_creator.plx
- - Recurively accesses file directories and converts pdb files (.ent) to dssp files (.dssp)
-- dssp_parse.plx
- - Accesses a directory and parses dssp data to the database
+  - Recurively accesses file directories and converts pdb files (.ent) to dssp files (.dssp)
+- dssp_parser.plx
+  - Accesses a directory and parses dssp data to the database
 - createtable.sql
- - The MySQL tables currently being used.
+  - The MySQL tables currently being used.
 
 ## Contributers
 Just me
